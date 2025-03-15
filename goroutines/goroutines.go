@@ -118,7 +118,7 @@ func main() {
 	defer cancel() // Ensure the cancel function is called
 
 	/* async */
-	ch := make(chan Response, 3)
+	ch := make(chan Response, 1)
 	wg := &sync.WaitGroup{}
 	wg.Add(len(targets))
 	for _, v := range targets {
