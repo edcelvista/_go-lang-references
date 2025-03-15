@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -46,26 +47,26 @@ func (u *Targets) fetchRestData(ctx context.Context) (Response, error) {
 }
 
 func (u *Targets) fetchRestDataAsync(ctx context.Context, ch chan Response, wg *sync.WaitGroup) {
+	// Declare a variable to store the result
+	var r Response
+
 	resp, err := http.Get(u.endpoint)
 	if err != nil {
-		log.Printf("ERROR: %v", err)
+		r.Error = fmt.Sprintf("ERROR: %v", err)
 		wg.Done()
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("ERROR: %v", err)
+		r.Error = fmt.Sprintf("ERROR: %v", err)
 		wg.Done()
 	}
-
-	// Declare a variable to store the result
-	var r Response
 
 	// Unmarshal the JSON data into the Person struct
 	err2 := json.Unmarshal([]byte(string(body)), &r)
 	if err2 != nil {
-		log.Println("Error unmarshalling JSON:", err2)
+		r.Error = fmt.Sprintf("Error unmarshalling JSON: %v", err2)
 		wg.Done()
 	}
 
@@ -91,9 +92,10 @@ type FloatingPointNumbers interface {
 }
 
 type Response struct {
-	Id   string    `json: "id"`
-	Name string    `json: "name"`
-	Data Data[int] `json: "data,omitempty"`
+	Error string    `json: "error"`
+	Id    string    `json: "id"`
+	Name  string    `json: "name"`
+	Data  Data[int] `json: "data,omitempty"`
 }
 
 type Data[T SignedIntegers | FloatingPointNumbers] struct {
@@ -112,7 +114,7 @@ func main() {
 	}
 
 	/* context */
-	ctx, cancel := context.WithTimeout(context.Background(), 5000*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel() // Ensure the cancel function is called
 
 	/* async */
@@ -126,6 +128,10 @@ func main() {
 	close(ch)
 
 	for v := range ch { /* capture set outside */
+		if v.Error != "" {
+			log.Printf("Error: %v\n", v.Error)
+			continue
+		}
 		log.Printf("Device: %v\n", v.Name)
 	}
 
