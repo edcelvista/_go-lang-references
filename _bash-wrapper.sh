@@ -5,6 +5,8 @@ YELLOW="\e[33m"
 BLUE="\e[34m"
 NC="\e[0m"  # No Color
 
+declare TMP_DIR="/tmp/tmp"
+
 info(){
     printf "${BLUE}$(date -Iseconds) [INFO]$1${NC}\n"
 }
@@ -40,13 +42,24 @@ flightCheck(){
     done
 }
 
+createTmpDir(){
+    TMP_DIR=$(mktemp -d)
+    echo "Temp dir created: $TMP_DIR"
+}
+
+cleanup(){
+    rm -rf $TMP_DIR
+}
+
 init(){
     flightCheck
-    runExitOnError uv venv
-    runExitOnError source .venv/bin/activate
-    runExitOnError uv pip install leann
-    runExitOnError ollama pull llama3.2:1b
+    createTmpDir
+    # runExitOnError uv venv
+    # runExitOnError source .venv/bin/activate
+    # runExitOnError uv pip install leann
+    # runExitOnError ollama pull llama3.2:1b
 }
 
 ## RUN ###
+trap cleanup EXIT
 init
