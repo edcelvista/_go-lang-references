@@ -1,2 +1,2 @@
 #!/bin/bash
-./_run-test.sh
+go test
