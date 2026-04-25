@@ -263,7 +263,7 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 		// * NAMESPACE *
 		ins := param.Indexes["namespace"]
 		tableNs := tablewriter.NewWriter(os.Stdout)
-		tableNs.Header([]string{"namespace", "CPU", "MEM"})
+		tableNs.Header([]string{"namespaces", "CPU", "MEM"})
 		ns := "ALL"
 		if gtu.namespace != "" {
 			ns = gtu.namespace
@@ -277,7 +277,7 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 
 		// * WORKLOADS *
 		tableWorkloads := tablewriter.NewWriter(os.Stdout)
-		tableWorkloads.Header([]string{"namespace", "Workload", "CPU", "MEM"})
+		tableWorkloads.Header([]string{"namespaces", "Workloads", "CPU", "MEM"})
 		iworkloads := param.Indexes["workloads"]
 		for _, w := range gtu.Workloads {
 			cpuTrendWl, memTrendWl := iworkloads.getTrendIndicator(w.Workload, w.Workloadcpu, w.Workloadmem, 100, 100)
@@ -289,7 +289,7 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 
 		// * NODES *
 		tableNodes := tablewriter.NewWriter(os.Stdout)
-		tableNodes.Header([]string{"Node", "CPU", "MEM", "CPU(%)", "MEM(%)", "CPU Capacity", "MEM Capacity"})
+		tableNodes.Header([]string{"Nodes", "CPU", "MEM", "CPU(%)", "MEM(%)", "CPU Capacity", "MEM Capacity"})
 		inodes := param.Indexes["nodes"]
 		for _, n := range gtu.Nodes {
 			cpuTrendNd, memTrendNd := inodes.getTrendIndicator(n.Node, int64(n.Nodecpupct), n.Nodemempct, 5, 5)
