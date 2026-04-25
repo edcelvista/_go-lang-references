@@ -91,6 +91,7 @@ type Indexfile struct {
 	DirPath          string
 	Filename         string
 	fullFilenamePath string
+	Debug            int
 }
 
 type IIndexes interface {
@@ -204,8 +205,10 @@ func (ins *Indexfile) getTrendIndicator(groupColKey string, cpuUsage int64, memU
 		}
 	}
 
-	// cpuTrendns = fmt.Sprintf("DEBUG =>  %d - %d | %f <> %f", cpuUsage, int64(cpuLastAvg), math.Abs(float64(cpuTrendns_)), cpuDiffLimit)
-	// memTrendns = fmt.Sprintf("DEBUG =>  %f - %d | %f <> %f", memUsage, int64(memLastAvg), math.Abs(float64(memTrendns_)), memDiffLimit)
+	if ins.Debug == 4 {
+		cpuTrendns = fmt.Sprintf("%s DEBUG =>  %d - %d | %f <> %f", cpuTrendns, cpuUsage, int64(cpuLastAvg), math.Abs(float64(cpuTrendns_)), cpuDiffLimit)
+		memTrendns = fmt.Sprintf("%s DEBUG =>  %f - %d | %f <> %f", memTrendns, memUsage, int64(memLastAvg), math.Abs(float64(memTrendns_)), memDiffLimit)
+	}
 
 	return cpuTrendns, memTrendns
 }
@@ -265,8 +268,8 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 			ns = gtu.namespace
 		}
 
-		cpuTrendns, memTrendns := ins.getTrendIndicator(ns, gtu.NamespaceCPU, gtu.NamespaceMem, 100, 0.5)
-		tableNs.Append([]string{ns, fmt.Sprintf("%dm %s", gtu.NamespaceCPU, cpuTrendns), fmt.Sprintf("%1.fGi %s", gtu.NamespaceMem, memTrendns)})
+		cpuTrendns, memTrendns := ins.getTrendIndicator(ns, gtu.NamespaceCPU, gtu.NamespaceMem, 100, 100)
+		tableNs.Append([]string{ns, fmt.Sprintf("%dm %s", gtu.NamespaceCPU, cpuTrendns), fmt.Sprintf("%1.fMi %s", gtu.NamespaceMem, memTrendns)})
 		tableNs.Render()
 		ins.write(fmt.Sprintf("%s,%d,%f", ns, gtu.NamespaceCPU, gtu.NamespaceMem))
 		// * NAMESPACE *
@@ -276,7 +279,7 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 		tableWorkloads.Header([]string{"namespace", "Workload", "CPU", "MEM"})
 		iworkloads := param.Indexes["workloads"]
 		for _, w := range gtu.Workloads {
-			cpuTrendWl, memTrendWl := iworkloads.getTrendIndicator(w.Workload, w.Workloadcpu, w.Workloadmem, 100, 500)
+			cpuTrendWl, memTrendWl := iworkloads.getTrendIndicator(w.Workload, w.Workloadcpu, w.Workloadmem, 100, 100)
 			tableWorkloads.Append([]string{w.namespace, w.Workload, fmt.Sprintf("%dm %s", w.Workloadcpu, cpuTrendWl), fmt.Sprintf("%1.fMi %s", w.Workloadmem, memTrendWl)})
 			iworkloads.write(fmt.Sprintf("%s,%d,%f", w.Workload, w.Workloadcpu, w.Workloadmem))
 		}
@@ -348,7 +351,7 @@ func (gtu *GetUtilizationStdOut) GetUtilizationNamespace(metricsClient *metricsc
 	mu.Lock() // Acquire the mutex lock | If another goroutine already holds the lock, this goroutine will block until the lock is released
 	gtu.namespace = ns
 	gtu.NamespaceCPU = totalCPU
-	gtu.NamespaceMem = float64(totalMem / 1024 / 1024 / 1024)
+	gtu.NamespaceMem = float64(totalMem / 1024 / 1024)
 	mu.Unlock() // Release the mutex lock
 }
 
@@ -383,6 +386,7 @@ func (gtu *GetUtilizationStdOut) GetUtilizationWorkload(clientset *kubernetes.Cl
 	}
 
 	workloads := make(map[string]wlAttib)
+
 	for _, pod := range pods.Items {
 		var totalCPU, totalMem int64
 		if val, ok := metricsMap[pod.Name]; ok {
@@ -415,12 +419,13 @@ func (gtu *GetUtilizationStdOut) GetUtilizationWorkload(clientset *kubernetes.Cl
 				w.Mem += totalMem
 				w.namespace = pod.Namespace
 				workloads[owner] = w // reassign value to original struct
+				continue             // avoid dupe append
 			}
 			w := workloads[owner]
 			w.Cpu += totalCPU
 			w.Mem += totalMem
 			w.namespace = pod.Namespace
-			workloads[owner] = w
+			workloads[owner] = w // reassign value to original struct
 		}
 	}
 

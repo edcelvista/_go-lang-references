@@ -25,13 +25,14 @@ import (
 var (
 	debug         int
 	action        string
+	refreshrate   int
 	sortby        string
 	namespace     string
 	labelSelector string
 	kubeconfig    string
 	gtuOut        k8sCustom.GetUtilizationStdOut
-	lastSort      string        = "cpu"
-	tick          time.Duration = 10
+	lastSort      string = "cpu"
+	tick          time.Duration
 )
 
 // func echoToJson(st interface{}) {
@@ -45,6 +46,7 @@ var (
 func parseArgs() {
 	flag.IntVar(&debug, "debug", 1, "Minimal logs (default) = 1 | Basic info (normal output) = 2 | More details about the request/response = 3-4 | Debug level (headers, request path, timing) = 5-6 | Verbose debugging, request/response bodies = 7-8 | Very verbose, internal client-go details = 9 | Maximum verbosity, internal details of client-go and API calls")
 	flag.StringVar(&action, "action", "", "watchPods, watchEvents, watchutil")
+	flag.IntVar(&refreshrate, "refreshrate", 10, "5, 10")
 	flag.StringVar(&sortby, "sortby", "cpu", "cpu, mem")
 	flag.StringVar(&namespace, "namespace", "", "target namespace")
 	flag.StringVar(&labelSelector, "label", "", "label of target workload object")
@@ -76,8 +78,6 @@ func main() {
 
 	clientset, metricsClientset, kubecnf := k8sCustom.ConfigInit(kubeconfig)
 	gtuOut.Kubecnf = kubecnf
-	gtuOut.Tick = tick * time.Second
-	gtuOut.SessionDir = tmpDir
 
 	switch strings.ToLower(action) {
 	case "watchpods":
@@ -91,6 +91,7 @@ func main() {
 		nsIndex := k8sCustom.Indexfile{
 			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "namespaces",
+			Debug:    debug,
 		}
 		nsIndex.SessionInit()
 		param.Indexes["namespace"] = nsIndex
@@ -98,6 +99,7 @@ func main() {
 		worloadsIndex := k8sCustom.Indexfile{
 			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "workloads",
+			Debug:    debug,
 		}
 		worloadsIndex.SessionInit()
 		param.Indexes["workloads"] = worloadsIndex
@@ -105,6 +107,7 @@ func main() {
 		nodesIndex := k8sCustom.Indexfile{
 			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "nodes",
+			Debug:    debug,
 		}
 		nodesIndex.SessionInit()
 		param.Indexes["nodes"] = nodesIndex
@@ -114,7 +117,9 @@ func main() {
 		fmt.Printf("Triggering Init Run...\n")
 		initRun <- 1
 
-		ticker := time.NewTicker(tick * time.Second)
+		tick = time.Duration(refreshrate)
+		duration := tick * time.Second
+		ticker := time.NewTicker(duration)
 		defer ticker.Stop()
 
 		resize := make(chan os.Signal, 1)
@@ -154,6 +159,9 @@ func main() {
 				}
 			}
 		}()
+
+		gtuOut.Tick = duration
+		gtuOut.SessionDir = tmpDir
 
 		for {
 			select {
