@@ -255,7 +255,8 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 		// * CONFIG *
 		tableCnf := tablewriter.NewWriter(os.Stdout)
 		tableCnf.Header([]string{"Configs"})
-		tableCnf.Append([]string{fmt.Sprintf("Date/Time: %s \nConfig: %s \nCluster: %s \nSort by: %s\nRefresh Rate: %0.fs\nSession file:%s", now.Format("2006-01-02 15:04:05"), gtu.Kubecnf, gtu.Clusterep, param.Sortby, gtu.Tick.Seconds(), gtu.SessionDir)})
+		// tableCnf.Append([]string{fmt.Sprintf("Date/Time: %s \nConfig: %s \nCluster: %s \nSort by: %s\nRefresh Rate: %0.fs\nSession file:%s", now.Format("2006-01-02 15:04:05"), gtu.Kubecnf, gtu.Clusterep, param.Sortby, gtu.Tick.Seconds(), gtu.SessionDir)})
+		tableCnf.Append([]string{fmt.Sprintf("Date/Time: %s \nConfig: %s \nCluster: %s \nSort by: %s", now.Format("2006-01-02 15:04:05"), gtu.Kubecnf, gtu.Clusterep, param.Sortby)})
 		tableCnf.Render()
 		// * CONFIG *
 
