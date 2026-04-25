@@ -85,28 +85,34 @@ func main() {
 	case "watchevents":
 		watchEvents(clientset, namespace)
 	case "watchutil":
+		fmt.Printf("Preparing Indexes...\n")
 		param.Indexes = map[string]k8sCustom.Indexfile{}
 
 		nsIndex := k8sCustom.Indexfile{
-			DirPath:  fmt.Sprintf("%s/.cnf", tmpDir),
+			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "namespaces",
 		}
 		nsIndex.SessionInit()
 		param.Indexes["namespace"] = nsIndex
 
 		worloadsIndex := k8sCustom.Indexfile{
-			DirPath:  fmt.Sprintf("%s/.cnf", tmpDir),
+			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "workloads",
 		}
 		worloadsIndex.SessionInit()
 		param.Indexes["workloads"] = worloadsIndex
 
 		nodesIndex := k8sCustom.Indexfile{
-			DirPath:  fmt.Sprintf("%s/.cnf", tmpDir),
+			DirPath:  fmt.Sprintf("%s", tmpDir),
 			Filename: "nodes",
 		}
 		nodesIndex.SessionInit()
 		param.Indexes["nodes"] = nodesIndex
+
+		initRun := make(chan int32, 1)
+
+		fmt.Printf("Triggering Init Run...\n")
+		initRun <- 1
 
 		ticker := time.NewTicker(tick * time.Second)
 		defer ticker.Stop()
@@ -151,6 +157,8 @@ func main() {
 
 		for {
 			select {
+			case <-initRun:
+				watchUtilization(clientset, metricsClientset, param, true, lastSort)
 			case <-ticker.C:
 				watchUtilization(clientset, metricsClientset, param, true, lastSort)
 			case <-resize:

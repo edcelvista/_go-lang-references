@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/olekukonko/tablewriter"
@@ -24,7 +25,6 @@ import (
 
 var sessionRowLimitRead int = 5
 
-// TODO func save session data points create trend data ⬆ ⬇
 type GetUtilizationStdOut struct {
 	namespace    string
 	NamespaceCPU int64
@@ -177,7 +177,6 @@ func (i *Indexfile) parseIndexAvg(groupBy string, colIndex int) float64 {
 	return sum / float64(len(window))
 }
 
-// TODO identify if 0 is from actual average | 0 if absence of data
 func (ins *Indexfile) getTrendIndicator(groupColKey string, cpuUsage int64, memUsage float64, cpuDiffLimit float64, memDiffLimit float64) (cpuTrend string, memTrend string) {
 	cpuLastAvg := ins.parseIndexAvg(groupColKey, 1)
 	memLastAvg := ins.parseIndexAvg(groupColKey, 2)
@@ -189,16 +188,15 @@ func (ins *Indexfile) getTrendIndicator(groupColKey string, cpuUsage int64, memU
 	cpuTrendns_ := cpuUsage - int64(cpuLastAvg)
 	memTrendns_ := memUsage - memLastAvg
 	cpuTrendns := ""
-	if math.Abs(float64(cpuTrendns_)) > cpuDiffLimit { // capture 500milicores difference
+	if math.Abs(float64(cpuTrendns_)) > cpuDiffLimit { // capture difference
 		if cpuTrendns_ < 0 {
 			cpuTrendns = "\033[31m⬇\033[0m"
 		} else {
 			cpuTrendns = "\033[32m⬆\033[0m"
-			// cpuTrendns = fmt.Sprintf("\033[32m⬆\033[0m | %d - %d | %f <> %f", cpuUsage, int64(cpuLastAvg), math.Abs(float64(cpuTrendns_)), cpuDiffLimit)
 		}
 	}
 	memTrendns := ""
-	if math.Abs(float64(memTrendns_)) > memDiffLimit { // capture 500Mi difference
+	if math.Abs(float64(memTrendns_)) > memDiffLimit { // capture difference
 		if memTrendns_ < 0 {
 			memTrendns = "\033[31m⬇\033[0m"
 		} else {
@@ -206,10 +204,15 @@ func (ins *Indexfile) getTrendIndicator(groupColKey string, cpuUsage int64, memU
 		}
 	}
 
+	// cpuTrendns = fmt.Sprintf("DEBUG =>  %d - %d | %f <> %f", cpuUsage, int64(cpuLastAvg), math.Abs(float64(cpuTrendns_)), cpuDiffLimit)
+	// memTrendns = fmt.Sprintf("DEBUG =>  %f - %d | %f <> %f", memUsage, int64(memLastAvg), math.Abs(float64(memTrendns_)), memDiffLimit)
+
 	return cpuTrendns, memTrendns
 }
 
 func ConfigInit(kubeconfig string) (*kubernetes.Clientset, *metricsclient.Clientset, string) {
+	fmt.Printf("Initializing K8s Config...\n")
+
 	config, err := rest.InClusterConfig() // gets auto mounted secrets via automountServiceAccountToken: false
 
 	if err != nil {
@@ -255,14 +258,14 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 
 		// * NAMESPACE *
 		ins := param.Indexes["namespace"]
-		cpuTrendns, memTrendns := ins.getTrendIndicator("ALL", gtu.NamespaceCPU, gtu.NamespaceMem, 500, 0.5)
-
 		tableNs := tablewriter.NewWriter(os.Stdout)
 		tableNs.Header([]string{"namespace", "CPU", "MEM"})
 		ns := "ALL"
 		if gtu.namespace != "" {
 			ns = gtu.namespace
 		}
+
+		cpuTrendns, memTrendns := ins.getTrendIndicator(ns, gtu.NamespaceCPU, gtu.NamespaceMem, 100, 0.5)
 		tableNs.Append([]string{ns, fmt.Sprintf("%dm %s", gtu.NamespaceCPU, cpuTrendns), fmt.Sprintf("%1.fGi %s", gtu.NamespaceMem, memTrendns)})
 		tableNs.Render()
 		ins.write(fmt.Sprintf("%s,%d,%f", ns, gtu.NamespaceCPU, gtu.NamespaceMem))
@@ -273,26 +276,24 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 		tableWorkloads.Header([]string{"namespace", "Workload", "CPU", "MEM"})
 		iworkloads := param.Indexes["workloads"]
 		for _, w := range gtu.Workloads {
-			cpuTrend, memTrend := ins.getTrendIndicator(w.Workload, w.Workloadcpu, w.Workloadmem, 500, 500)
-
-			tableWorkloads.Append([]string{w.namespace, w.Workload, fmt.Sprintf("%dm %s", w.Workloadcpu, cpuTrend), fmt.Sprintf("%1.fMi %s", w.Workloadmem, memTrend)})
+			cpuTrendWl, memTrendWl := iworkloads.getTrendIndicator(w.Workload, w.Workloadcpu, w.Workloadmem, 100, 500)
+			tableWorkloads.Append([]string{w.namespace, w.Workload, fmt.Sprintf("%dm %s", w.Workloadcpu, cpuTrendWl), fmt.Sprintf("%1.fMi %s", w.Workloadmem, memTrendWl)})
 			iworkloads.write(fmt.Sprintf("%s,%d,%f", w.Workload, w.Workloadcpu, w.Workloadmem))
 		}
 		tableWorkloads.Render()
 		// * WORKLOADS *
 
-		// * NODEs *
+		// * NODES *
 		tableNodes := tablewriter.NewWriter(os.Stdout)
 		tableNodes.Header([]string{"Node", "CPU", "MEM", "CPU(%)", "MEM(%)", "CPU Capacity", "MEM Capacity"})
 		inodes := param.Indexes["nodes"]
 		for _, n := range gtu.Nodes {
-			cpuTrend, memTrend := ins.getTrendIndicator(n.Node, int64(math.Ceil(n.Nodecpupct)), n.Nodemempct, 5, 5)
-
-			tableNodes.Append([]string{n.Node, fmt.Sprintf("%dm", n.Nodecpu), fmt.Sprintf("%1.fGi", n.Nodemem), fmt.Sprintf("%.1f %s", n.Nodecpupct, cpuTrend), fmt.Sprintf("%.1f %s", n.Nodemempct, memTrend), fmt.Sprintf("%dm", n.Nodecpucalloc), fmt.Sprintf("%1.fGi", n.Nodememalloc)})
+			cpuTrendNd, memTrendNd := inodes.getTrendIndicator(n.Node, int64(n.Nodecpupct), n.Nodemempct, 5, 5)
+			tableNodes.Append([]string{n.Node, fmt.Sprintf("%dm", n.Nodecpu), fmt.Sprintf("%1.fGi", n.Nodemem), fmt.Sprintf("%.1f %s", n.Nodecpupct, cpuTrendNd), fmt.Sprintf("%.1f %s", n.Nodemempct, memTrendNd), fmt.Sprintf("%dm", n.Nodecpucalloc), fmt.Sprintf("%1.fGi", n.Nodememalloc)})
 			inodes.write(fmt.Sprintf("%s,%f,%f", n.Node, n.Nodecpupct, n.Nodemempct))
 		}
 		tableNodes.Render()
-		// * NODEs *
+		// * NODES *
 
 		fmt.Printf("Ctrl + C to exit...")
 	default:
@@ -302,16 +303,30 @@ func (gtu *GetUtilizationStdOut) DisplayData(dsType string, param Param) {
 
 func (gtu *GetUtilizationStdOut) GetUtilization(clientset *kubernetes.Clientset, metricsClient *metricsclient.Clientset, param Param) {
 	gtu.Clusterep = clientset.RESTClient().Get().URL().Host
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
 	switch strings.ToLower(param.LabelSelector) {
 	case "":
-		gtu.GetUtilizationNamespace(metricsClient, param.Namespace)
-		gtu.GetUtilizationWorkload(clientset, metricsClient, param.Namespace, "")
+		wg.Add(2) // Set counter to 2 - expecting 2 goroutines
+		go func() {
+			defer wg.Done() // Decrement counter when goroutine finishes
+			gtu.GetUtilizationNamespace(metricsClient, param.Namespace, &mu)
+		}()
+		go func() {
+			defer wg.Done() // Decrement counter when goroutine finishes
+			gtu.GetUtilizationWorkload(clientset, metricsClient, param.Namespace, "", &mu)
+		}()
+
+		wg.Wait() // Block here until counter reaches 0 (both goroutines done)
+		gtu.GetUtilizationNodes(clientset, metricsClient)
 	default:
-		gtu.GetUtilizationWorkload(clientset, metricsClient, param.Namespace, param.LabelSelector)
+		gtu.GetUtilizationWorkload(clientset, metricsClient, param.Namespace, param.LabelSelector, &mu)
 	}
 }
 
-func (gtu *GetUtilizationStdOut) GetUtilizationNamespace(metricsClient *metricsclient.Clientset, ns string) {
+func (gtu *GetUtilizationStdOut) GetUtilizationNamespace(metricsClient *metricsclient.Clientset, ns string, mu *sync.Mutex) {
 	podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses(ns).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		log.Fatalf("%s\n", err)
@@ -330,12 +345,14 @@ func (gtu *GetUtilizationStdOut) GetUtilizationNamespace(metricsClient *metricsc
 		}
 	}
 
+	mu.Lock() // Acquire the mutex lock | If another goroutine already holds the lock, this goroutine will block until the lock is released
 	gtu.namespace = ns
 	gtu.NamespaceCPU = totalCPU
 	gtu.NamespaceMem = float64(totalMem / 1024 / 1024 / 1024)
+	mu.Unlock() // Release the mutex lock
 }
 
-func (gtu *GetUtilizationStdOut) GetUtilizationWorkload(clientset *kubernetes.Clientset, metricsClient *metricsclient.Clientset, ns string, l string) {
+func (gtu *GetUtilizationStdOut) GetUtilizationWorkload(clientset *kubernetes.Clientset, metricsClient *metricsclient.Clientset, ns string, l string, mu *sync.Mutex) {
 	pods, err := clientset.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{LabelSelector: l})
 	if err != nil {
 		log.Fatalf("%s\n", err)
@@ -416,10 +433,10 @@ func (gtu *GetUtilizationStdOut) GetUtilizationWorkload(clientset *kubernetes.Cl
 			Workloadmem: float64(v.Mem / 1024 / 1024),
 		}
 
+		mu.Lock()
 		gtu.Workloads = append(gtu.Workloads, workload)
+		mu.Unlock()
 	}
-
-	gtu.GetUtilizationNodes(clientset, metricsClient)
 }
 
 func (gtu *GetUtilizationStdOut) GetUtilizationNodes(clientset *kubernetes.Clientset, metricsClient *metricsclient.Clientset) {
